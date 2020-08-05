@@ -31,6 +31,9 @@ int main() {
         if (a == 0) {
             std::cout << "Please, check output video file path!" << std::endl;
         }
+        if (a == 2) {
+            std::cout << "Please, change input .bmp image file or .yuv video!" << std::endl;
+        }
     }
     catch (...) {
         std::cout << "---!!Unexpected ERROR occured!!---" << std::endl;

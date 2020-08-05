@@ -3,16 +3,13 @@
 #include <iostream>
 #include <vector>
 #include <thread>
+#include <mutex>
 
 class BMPinfo {
 private:
-    struct RGB_pixel { //структура с информацией о пикселе
-        unsigned char red;
-        unsigned char green;
-        unsigned char blue;
-    };
 
     unsigned int filesize;
+    std::mutex mtx;
 
     bool read_BMP(const char* filename, unsigned char* YUV420, int &vid_width, int &vid_height) {
 
@@ -20,7 +17,6 @@ private:
         FILE* image_file;
 
         if ((image_file = fopen(filename, "rb")) == NULL) {
-
             std::cout << "Can't open BMP image" << std::endl;
             throw 1;
         }
@@ -44,61 +40,69 @@ private:
         fread(datacolour, sizeof(unsigned char), datacolour_size, image_file); //чтение данных пикселей BGR-24
         fclose(image_file);
 
-        RGB_pixel RGB;
-        RGB = { 0, 0, 0 };
-
         std::vector<std::thread> threads;
-        std::vector<int> YUV;
+
+        unsigned char* YUV = new unsigned char[datacolour_size];
+
         int row_padded = (height - 1) * (width % 4);
 
         for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-
-                RGB.blue = datacolour[(j + (height - 1 - i) * width) * 3 + row_padded];
-                RGB.green = datacolour[(j + (height - 1 - i) * width) * 3 + 1 + row_padded];
-                RGB.red = datacolour[(j + (height - 1 - i) * width) * 3 + 2 + row_padded];
-                //threads.push_back(std::thread(convert_RGB_to_YUV444, &YUV, std::ref(RGB)));
-                convert_RGB_to_YUV444(&YUV, RGB);
-            }
+               
+            threads.emplace_back(std::thread(&BMPinfo::convert_RGB_to_YUV444, this, 
+                                YUV, datacolour, row_padded, i));
             row_padded -= (width % 4);
         }
 
+        for (int x = 0; x < height; x++) {
+            threads[x].join();
+        }
+
+
+        threads.emplace_back(std::thread(&BMPinfo::YUV_to_YUV420, this, YUV, YUV420));
+        threads[height].join();
+
+        delete[] YUV;
+        threads.clear();
         delete[] datacolour;    //удаление динамического массива с данными цвета
-
-        //std::thread cnvrt(YUV_to_YUV420, YUV, std::ref(YUV420));
-        YUV_to_YUV420(YUV, YUV420);
-        YUV.clear();
-
         return true;
     }
 
-    void convert_RGB_to_YUV444(std::vector<int>* YUV, struct RGB_pixel& RGB) { //конвертация строки YUV444
+    void convert_RGB_to_YUV444(unsigned char* YUV, unsigned char *datacolour, const int &row_padded, int i) { //конвертация строки YUV444
 
+        
         int Y, U, V;
+        int r, g, b;
+        for (int j = 0; j < width; j++) {
 
-        Y = 0.257 * (int)RGB.red + 0.504 * (int)RGB.green + 0.098 * (int)RGB.blue + 16;
-        U = -0.148 * (int)RGB.red - 0.291 * (int)RGB.green + 0.439 * (int)RGB.blue + 128;
-        V = 0.439 * (int)RGB.red - 0.368 * (int)RGB.green - 0.071 * (int)RGB.blue + 128;
+            b = datacolour[(j + (height - 1 - i) * width) * 3 + row_padded];
+            g = datacolour[(j + (height - 1 - i) * width) * 3 + 1 + row_padded];
+            r = datacolour[(j + (height - 1 - i) * width) * 3 + 2 + row_padded];
+            
+            
+            Y = 0.257 * (int)r + 0.504 * (int)g + 0.098 * (int)b + 16;
+            U = -0.148 * (int)r - 0.291 * (int)g + 0.439 * (int)b + 128;
+            V = 0.439 * (int)r - 0.368 * (int)g - 0.071 * (int)b + 128;
 
-        if (Y < 0)
-            Y = 0;
-        else if (Y > 255)
-            Y = 255;
-        if (U < 0)
-            U = 0;
-        else if (U > 255)
-            U = 255;
-        if (V < 0)
-            V = 0;
-        else if (V > 255)
-            V = 255;
-
-        YUV->push_back(Y);
-        YUV->push_back(U);
-        YUV->push_back(V);
+            if (Y < 0)
+                Y = 0;
+            else if (Y > 255)
+                Y = 255;
+            if (U < 0)
+                U = 0;
+            else if (U > 255)
+                U = 255;
+            if (V < 0)
+                V = 0;
+            else if (V > 255)
+                V = 255;
+            
+            YUV[(j + i * width) * 3] = Y;
+            YUV[(j + i * width) * 3 + 1] = U;
+            YUV[(j + i * width) * 3 + 2] = V;
+        }
     }
 
-    void YUV_to_YUV420(std::vector<int>& YUV, unsigned char* YUV420) { //конвертация в YUV420
+    void YUV_to_YUV420(unsigned char* YUV, unsigned char* YUV420) { //конвертация в YUV420
 
         int i, j;
         int sum;
@@ -150,7 +154,7 @@ public:
 
         if (!read_BMP(filename, YUV420, vW, vH)) {
             std::cout << "Image size doesn't fit!" << std::endl;
-            //return;                                   //написать throw       DONT FORGET!
+            throw 2;
         }
     }
 
