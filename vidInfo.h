@@ -1,6 +1,8 @@
 //Класс VideoInfo  
 
 #include <iostream>
+#include <vector>
+#include <thread>
 
 //типовые значения размеров кадра видео
 #define _1080p 1920, 1080
@@ -25,16 +27,17 @@ private:
             throw -1;
         }
 
+        //чтение информации о размера файла
         fseek(video_file, 0, SEEK_END);
         file_size = ftell(video_file);
 
         fclose(video_file);
 
-        int choise = inputInterface();
-        bool isgood = false;
+        int choice = inputInterface(); //выбор качества видео
+        bool isgood = false; //булева переменная, необходимая дляпроверки того, подходит ли выбранное качество размеру видео
 
         while (!isgood) {
-            switch (choise) {
+            switch (choice) { //Проверка и установка выбранного качества видео
             case 1:
                 isgood = resolution(_1080p);
                 break;
@@ -62,13 +65,13 @@ private:
             }
             
             if (!isgood) {
-                choise = inputInterface();
+                choice = inputInterface();
             }
         }
     }
 
-    int inputInterface() {
-        int choise;
+    int inputInterface() { //выбор качества видео
+        int choice;
 
         std::cout << "Chose one of the resolutions below or print your own: \n" <<
             "1. 1080p (1920*1080) \n" <<
@@ -82,14 +85,14 @@ private:
             "0. Clear console \n \n" <<
             "> ";
 
-        while (!(std::cin >> choise)) {
+        while (!(std::cin >> choice)) { //прверка правильности введенных данных
             std::cin.clear();
             std::cin.ignore(1000, '\n');
             std::cout << "Bad data inputed! Try again: ";
         }
 
-        while (choise <= 0 || choise > 8) {
-            if (choise == 0) {
+        while (choice <= 0 || choice > 8) { //присутствует ли данная опция среди предложенных
+            if (choice == 0) {
                 system("cls");
                 std::cout << "Chose one of the resolutions below or print your own: \n" <<
                     "1. 1080p (1920*1080) \n" <<
@@ -104,24 +107,24 @@ private:
                     "> ";
             }
             else
-                std::cout << "No such function! Try again: ";
+                std::cout << "Option doesn't exist! Try again: ";
 
-            while (!(std::cin >> choise)) {
+            while (!(std::cin >> choice)) { //прверка правильности введенных данных
                 std::cin.clear();
                 std::cin.ignore(1000, '\n');
                 std::cout << "\nBad data inputed! Try again: ";
             }
         }
-        if (choise == 8) {
+        if (choice == 8) { //Ручное изменение переменных width и height 
             custom_size();
         }
-        return choise;
+        return choice;
     }
 
-    void custom_size() {
+    void custom_size() { //Ручное изменение переменных width и height 
         std::cout << "Your Width: ";
 
-        while (!(std::cin >> width)) {
+        while (!(std::cin >> width)) { //прверка правильности введенных данных
             std::cin.clear();
             std::cin.ignore(1000, '\n');
             std::cout << "\nIncorect Input of Width. \n" <<
@@ -130,7 +133,7 @@ private:
 
         std::cout << "Your Height: ";
 
-        while (!(std::cin >> height)) {
+        while (!(std::cin >> height)) { //прверка правильности введенных данных
             std::cin.clear();
             std::cin.ignore(1000, '\n');
             std::cout << "\nIncorect Input of Width. \n" <<
@@ -139,9 +142,10 @@ private:
     }
 
     bool resolution(int wdt, int hght) { //метод проверяющий правильность внесенных данных
-        frame_size = 3 * wdt * hght;
+        frame_size = 3 * wdt * hght; //Значение переменной размера кадра
         frame_size /= 2;
-        if ((file_size % frame_size) == 0) {
+
+        if ((file_size % frame_size) == 0) { //Проверка соответствия размера видео его качеству 
             width = wdt;
             height = hght;
             frame_count = file_size / frame_size; //вычисление колличества кадров
@@ -151,6 +155,26 @@ private:
             return false;
         }
         return true;
+    }
+
+    void frame_by_frame(unsigned char *vid_info, unsigned char* img_buf, int& img_width, int& img_height, 
+                        int &img_heightd2, int &img_widthd2, int &vidY_size, int &vidYU_size, int &vid_widthd2,
+                        int &imgY_size, int &imgYU_size, int i) {
+
+        int j = 0, k = 0;
+
+        for (j = 0; j < img_height; j++) { //циклы заменяющие Y видео на Y какртинки
+            for (k = 0; k < img_width; k++) {
+                vid_info[i + k + (j * width)] = img_buf[k + (j * img_width)];
+            }
+        }
+
+        for (j = 0; j < img_heightd2; j++) { //циклы заменяющие UV видео на UV какртинки
+            for (k = 0; k < img_widthd2; k++) {
+                vid_info[i + vidY_size + k + (j * vid_widthd2)] = img_buf[imgY_size + k + (j * img_widthd2)];
+                vid_info[i + vidYU_size + k + (j * vid_widthd2)] = img_buf[imgYU_size + k + (j * img_widthd2)];
+            }
+        }
     }
 
 public:
@@ -163,7 +187,7 @@ public:
     
         void create_file(const char *vid_filename, const char* newV_filename, unsigned char *img_buf, int& img_width, int& img_height) {
 
-            int i = 0, j = 0, k = 0;
+            int i = 0;
 
             int vidY_size = width * height; //Размер Y области кадра видео
             int vidYU_size = 5 * width * height; //Размер YU области кадра видео
@@ -188,23 +212,22 @@ public:
             fread(vid_info, sizeof(unsigned char), file_size, video_file); //чтение информации о видео
             fclose(video_file);
 
+            std::vector<std::thread> threads; //вектор потоков
+
             for (i = 0; i < file_size; i += frame_size) { //цикл, проходящий все кадры видео
 
-                for (j = 0; j < img_height; j++) { //циклы заменяющие Y видео на Y какртинки
-                    for (k = 0; k < img_width; k++) {
-                        vid_info[i + k + (j * width)] = img_buf[k + (j * img_width)];
-                    }
-                }
-                
-                for (j = 0; j < img_heightd2; j++) { //циклы заменяющие UV видео на UV какртинки
-                    for (k = 0; k < img_widthd2; k++) {
-                        vid_info[i + vidY_size + k + (j * vid_widthd2)] = img_buf[imgY_size + k + (j * img_widthd2)];
-                        vid_info[i + vidYU_size + k + (j * vid_widthd2)] = img_buf[imgYU_size + k + (j * img_widthd2)];
-                    }
-                }
+                threads.emplace_back(std::thread(&VideoInfo::frame_by_frame, this, vid_info, img_buf, 
+                                    std::ref(img_width), std::ref(img_height), std::ref(img_heightd2), 
+                                    std::ref(img_widthd2), std::ref(vidY_size), std::ref(vidYU_size), 
+                                    std::ref(vid_widthd2), std::ref(imgY_size), std::ref(imgYU_size), i)); 
             }
 
-            FILE* new_file;
+            for (i = 0; i < frame_count; i ++) {
+                threads[i].join();
+            }
+
+            // создание нового файла
+            FILE* new_file; 
             if ((new_file = fopen(newV_filename, "wb")) == NULL) { //открытие нового файла
                 std::cout << "Can't open yuv image" << std::endl;
                 throw 0;
