@@ -15,7 +15,7 @@ private:
        
     bool resolution(int, int); 
         
-    void frame_by_frame(unsigned char*, unsigned char*, int&, int&, int&, int&, int&, int&, int&, int&, int&, int);
+    void frame_by_frame(unsigned char*, unsigned char*, int&, int&, int&, int&, int&, int&, int&, int&, int&);
 
 public:
     VideoInfo(const char*);
